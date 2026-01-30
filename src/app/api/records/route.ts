@@ -60,8 +60,16 @@ export async function GET(request: Request) {
     conditions.push(sql`created_at < (${end}::date + interval '1 day')`);
   }
 
-  const whereClause =
-    conditions.length > 0 ? sql`WHERE ${sql.join(conditions, sql` AND `)}` : sql``;
+  let whereClause = sql``;
+  if (conditions.length === 1) {
+    whereClause = sql`WHERE ${conditions[0]}`;
+  } else if (conditions.length > 1) {
+    const combined = conditions.reduce((acc, condition, index) => {
+      if (index === 0) return condition;
+      return sql`${acc} AND ${condition}`;
+    }, conditions[0]);
+    whereClause = sql`WHERE ${combined}`;
+  }
 
   const rows = await sql<RecordRow[]>`
     SELECT id, content, mood, images, videos, created_at
