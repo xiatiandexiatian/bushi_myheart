@@ -19,9 +19,7 @@ export async function GET(request: Request) {
   const end = searchParams.get("end");
 
   if (mode === "stats") {
-    const rows = await sql<
-      { range: string; count: number }[]
-    >`
+    const rows = (await sql`
       SELECT range, count
       FROM (
         SELECT '7d' as range, COUNT(*)::int as count
@@ -36,7 +34,7 @@ export async function GET(request: Request) {
         FROM records
         WHERE created_at >= (now() - interval '90 days')
       ) t;
-    `;
+    `) as { range: string; count: number }[];
     const map = rows.reduce<Record<string, number>>((acc, row) => {
       acc[row.range] = row.count;
       return acc;
@@ -71,13 +69,13 @@ export async function GET(request: Request) {
     whereClause = sql`WHERE ${combined}`;
   }
 
-  const rows = await sql<RecordRow[]>`
+  const rows = (await sql`
     SELECT id, content, mood, images, videos, created_at
     FROM records
     ${whereClause}
     ORDER BY created_at DESC
     LIMIT 200;
-  `;
+  `) as RecordRow[];
 
   return NextResponse.json(
     rows.map((row) => ({
@@ -99,11 +97,11 @@ export async function POST(request: Request) {
   const images = Array.isArray(body.images) ? body.images : [];
   const videos = Array.isArray(body.videos) ? body.videos : [];
 
-  const rows = await sql<RecordRow[]>`
+  const rows = (await sql`
     INSERT INTO records (content, mood, images, videos)
     VALUES (${content}, ${mood || null}, ${sql.json(images)}, ${sql.json(videos)})
     RETURNING id, content, mood, images, videos, created_at;
-  `;
+  `) as RecordRow[];
 
   const row = rows[0];
 
