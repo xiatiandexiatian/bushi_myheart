@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>不失 · 私密记录空间（MVP Demo）</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7f4ef;
+        --panel: #ffffff;
+        --ink: #1f1a17;
+        --muted: #7a6f67;
+        --line: #eadfd5;
+        --accent: #c58f6a;
+        --accent-soft: #f3e1d2;
+        --shadow: 0 12px 28px rgba(23, 16, 11, 0.12);
+        --radius: 16px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+      }
+
+      .page {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 32px 24px 60px;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .logo {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        background: var(--accent-soft);
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+        color: var(--accent);
+      }
+
+      .title h1 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+      }
+
+      .title p {
+        margin: 4px 0 0;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .private-badge {
+        padding: 8px 14px;
+        border-radius: 999px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 24px;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 20px;
+        box-shadow: var(--shadow);
+      }
+
+      .side {
+        background: #fbf7f2;
+        border-color: #efe4d8;
+        box-shadow: 0 10px 24px rgba(23, 16, 11, 0.08);
+      }
+
+      .panel h2 {
+        margin: 0 0 12px;
+        font-size: 16px;
+      }
+
+      .panel p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .side h2 {
+        font-size: 14px;
+        font-weight: 500;
+        color: #6e6159;
+      }
+
+      .side p {
+        font-size: 12.5px;
+      }
+
+      .capture {
+        display: grid;
+        gap: 14px;
+      }
+
+      .input-block {
+        border-radius: 16px;
+        background: #fff9f3;
+        border: 1px solid #f0e2d6;
+        padding: 14px;
+        display: grid;
+        gap: 12px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+      }
+
+      .capture textarea {
+        width: 100%;
+        min-height: 140px;
+        border-radius: 14px;
+        border: 1px solid #f1e6db;
+        padding: 14px;
+        font-size: 14px;
+        background: #fffdfb;
+        box-shadow: inset 0 1px 4px rgba(42, 26, 12, 0.06);
+        resize: vertical;
+      }
+
+      .textarea-wrap {
+        position: relative;
+      }
+
+      .ghost-hint {
+        position: absolute;
+        left: 14px;
+        top: 14px;
+        font-size: 14px;
+        color: #d1c5bc;
+        pointer-events: none;
+        display: grid;
+        gap: 4px;
+      }
+
+      .ghost-hint div:last-child {
+        color: #dfd4cc;
+      }
+
+      .capture textarea:not(:placeholder-shown) + .ghost-hint {
+        opacity: 0;
+      }
+
+      .capture-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .chip {
+        border: 1px solid var(--line);
+        padding: 8px 12px;
+        border-radius: 999px;
+        font-size: 12px;
+        color: var(--muted);
+        background: #fdf8f3;
+      }
+
+      .primary-btn {
+        margin-left: auto;
+        border: 1px solid #e6d3c3;
+        background: #f4e5d9;
+        color: #8a5f43;
+        padding: 10px 18px;
+        border-radius: 10px;
+        font-size: 13px;
+      }
+
+      .cards {
+        display: grid;
+        gap: 12px;
+        margin-top: 14px;
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 14px;
+        background: #fbfaf8;
+      }
+
+      .card .meta {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+
+      .card .content {
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .tag {
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 10.5px;
+        background: #f6eadf;
+        color: #b07a55;
+      }
+
+      .recall {
+        display: grid;
+        gap: 10px;
+      }
+
+      .recall-item {
+        border: 1px dashed var(--line);
+        border-radius: 12px;
+        padding: 12px;
+        background: #fffdf8;
+      }
+
+      .timeline {
+        display: grid;
+        gap: 10px;
+      }
+
+      .timeline-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: #fbfaf8;
+        border: 1px solid var(--line);
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .soft-note {
+        padding: 14px;
+        border-radius: 12px;
+        background: #fff8f1;
+        border: 1px solid #f2d8c3;
+        font-size: 13px;
+        color: #7f5b3d;
+      }
+
+      .search {
+        display: grid;
+        gap: 10px;
+      }
+
+      .search input {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 13px;
+      }
+
+      footer {
+        margin-top: 26px;
+        color: var(--muted);
+        font-size: 12px;
+        text-align: center;
+      }
+
+      @media (max-width: 900px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+        .primary-btn {
+          width: 100%;
+          margin-left: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header>
+        <div class="brand">
+          <div class="logo">不失</div>
+          <div class="title">
+            <h1>私密记录空间 · MVP Demo</h1>
+            <p>先接住当下，再在未来轻轻回放。</p>
+          </div>
+        </div>
+        <div class="private-badge">默认私密 · 无分享入口</div>
+      </header>
+
+      <main class="layout">
+        <section class="panel capture">
+          <div>
+            <h2>立即放下一个“当下切片”</h2>
+            <p>不需要标题、不需要结构。你只需要把此刻真实放进去。</p>
+          </div>
+          <div class="input-block">
+            <div class="textarea-wrap">
+              <textarea placeholder=" "></textarea>
+              <div class="ghost-hint">
+                <div>此刻的你正在想什么？不用整理，不用体面。</div>
+                <div>哪怕只是一句话，也够了。</div>
+              </div>
+            </div>
+            <div class="capture-actions">
+              <div class="chip">文字</div>
+              <div class="chip">图片</div>
+              <div class="chip">视频</div>
+              <div class="chip">情绪：今天有点乱</div>
+              <button class="primary-btn" type="button">保存这一刻</button>
+            </div>
+          </div>
+
+          <div>
+            <h2>这些时刻</h2>
+            <p>每一条都是当时的你，不做解释。</p>
+            <div class="cards">
+              <div class="card">
+                <div class="meta">
+                  <span>今天 19:12 · 和朋友聊天</span>
+                  <span class="tag">洞察</span>
+                </div>
+                <div class="content">“她不是不想改变，而是害怕再失去一次自己。”</div>
+              </div>
+              <div class="card">
+                <div class="meta">
+                  <span>昨天 23:40 · 情绪过后</span>
+                  <span class="tag">如实留下</span>
+                </div>
+                <div class="content">我不想再为某些人证明我配得上被爱了。</div>
+              </div>
+              <div class="card">
+                <div class="meta">
+                  <span>周二 07:05 · 独处顿悟</span>
+                  <span class="tag">清醒</span>
+                </div>
+                <div class="content">“原来我一直在等一个不需要我压抑的关系。”</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="panel side">
+          <div class="recall">
+            <h2>被动回顾</h2>
+            <p>在你平静的时候，轻轻出现一条过去的你。</p>
+            <div class="recall-item">
+              <div class="meta">三周前 · 夜里 00:18</div>
+              <div class="content">“不需要立刻好起来，但至少不要再否认自己。”</div>
+            </div>
+          </div>
+
+          <div class="timeline" style="margin-top: 18px;">
+            <h2>粗时间视角</h2>
+            <p>按时间段回看，不做分析。</p>
+            <div class="timeline-row">
+              <span>最近 7 天</span>
+              <span>12 条</span>
+            </div>
+            <div class="timeline-row">
+              <span>过去 30 天</span>
+              <span>46 条</span>
+            </div>
+            <div class="timeline-row">
+              <span>这个季度</span>
+              <span>108 条</span>
+            </div>
+          </div>
+
+          <div class="soft-note" style="margin-top: 18px;">
+            轻量自我观察提示：你最近更常写下“边界”与“被理解”。
+          </div>
+
+          <div class="search" style="margin-top: 18px;">
+            <h2>基础检索</h2>
+            <input type="text" placeholder="关键词 / 时间" />
+            <div class="chip">仅作辅助入口</div>
+          </div>
+        </aside>
+      </main>
+
+      <footer>人生哪能多如意，万事只求半称心。</footer>
+    </div>
+  </body>
+</html>
