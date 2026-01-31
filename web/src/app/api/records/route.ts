@@ -19,6 +19,7 @@ export async function GET(request: Request) {
   const end = searchParams.get("end");
 
   if (mode === "stats") {
+    type StatsRow = { range: string; count: number };
     const rows = (await sql`
       SELECT range, count
       FROM (
@@ -34,7 +35,7 @@ export async function GET(request: Request) {
         FROM records
         WHERE created_at >= (now() - interval '90 days')
       ) t;
-    `) as { range: string; count: number }[];
+    `) as unknown as StatsRow[];
     const map = rows.reduce<Record<string, number>>((acc, row) => {
       acc[row.range] = row.count;
       return acc;
