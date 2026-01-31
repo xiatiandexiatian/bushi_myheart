@@ -76,7 +76,7 @@ export async function GET(request: Request) {
     ${whereClause}
     ORDER BY created_at DESC
     LIMIT 200;
-  `) as RecordRow[];
+  `) as unknown as RecordRow[];
 
   return NextResponse.json(
     rows.map((row) => ({
@@ -102,7 +102,7 @@ export async function POST(request: Request) {
     INSERT INTO records (content, mood, images, videos)
     VALUES (${content}, ${mood || null}, ${sql.json(images)}, ${sql.json(videos)})
     RETURNING id, content, mood, images, videos, created_at;
-  `) as RecordRow[];
+  `) as unknown as RecordRow[];
 
   const row = rows[0];
 
