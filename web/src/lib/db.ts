@@ -2,7 +2,7 @@ import postgres from "postgres";
 
 let sqlClient: ReturnType<typeof postgres> | null = null;
 
-export const sql = (...args: Parameters<ReturnType<typeof postgres>>) => {
+export const getSql = () => {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is not set.");
@@ -10,10 +10,11 @@ export const sql = (...args: Parameters<ReturnType<typeof postgres>>) => {
   if (!sqlClient) {
     sqlClient = postgres(databaseUrl, { ssl: "require" });
   }
-  return sqlClient(...args);
+  return sqlClient;
 };
 
 export async function ensureSchema() {
+  const sql = getSql();
   await sql`CREATE EXTENSION IF NOT EXISTS pgcrypto;`;
   await sql`
     CREATE TABLE IF NOT EXISTS records (

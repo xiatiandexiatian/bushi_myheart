@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { ensureSchema, sql } from "@/lib/db";
+import { ensureSchema, getSql } from "@/lib/db";
 
 type RecordRow = {
   id: string;
@@ -12,6 +12,7 @@ type RecordRow = {
 
 export async function GET(request: Request) {
   await ensureSchema();
+  const sql = getSql();
   const { searchParams } = new URL(request.url);
   const mode = searchParams.get("mode");
   const keyword = searchParams.get("keyword")?.trim() ?? "";
@@ -92,6 +93,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   await ensureSchema();
+  const sql = getSql();
   const body = await request.json();
   const content = typeof body.content === "string" ? body.content : "";
   const mood = typeof body.mood === "string" ? body.mood : "";
@@ -118,6 +120,7 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   await ensureSchema();
+  const sql = getSql();
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   if (!id) {
