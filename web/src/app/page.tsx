@@ -18,6 +18,18 @@ type MediaItem = {
   uploading: boolean;
 };
 
+type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+type UploadedFile = {
+  id: string;
+  name: string;
+  url: string;
+  uploading: boolean;
+};
+
 export default function Home() {
   const [text, setText] = useState("");
   const [images, setImages] = useState<MediaItem[]>([]);
@@ -46,10 +58,30 @@ export default function Home() {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [timeRangeLabel, setTimeRangeLabel] = useState("");
   const [timeStats, setTimeStats] = useState({
-    last7: 0,
+    last3: 0,
+    last10: 0,
     last30: 0,
-    last90: 0,
   });
+  const [showAgent, setShowAgent] = useState(false);
+  const [agentPrompt, setAgentPrompt] = useState("");
+  const [agentLoading, setAgentLoading] = useState(false);
+  const [agentError, setAgentError] = useState("");
+  const [agentMessages, setAgentMessages] = useState<ChatMessage[]>([]);
+  const [agentFiles, setAgentFiles] = useState<UploadedFile[]>([]);
+  const [agentSessionId, setAgentSessionId] = useState<string | null>(null);
+  const agentFileInputRef = useRef<HTMLInputElement | null>(null);
+  const agentChatRef = useRef<HTMLDivElement | null>(null);
+  const [mediaFallback, setMediaFallback] = useState<Record<string, boolean>>({});
+  const [insightText, setInsightText] = useState(
+    "轻量自我观察提示：当下还在慢慢铺开，不必急着下结论。"
+  );
+  const [insightLoading, setInsightLoading] = useState(false);
+  const [insightError, setInsightError] = useState("");
+  const [insightRelated, setInsightRelated] = useState<RecordItem[]>([]);
+  const [showInsightModal, setShowInsightModal] = useState(false);
+  const insightAutoRanRef = useRef(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 6;
 
   const imagePreviews = useMemo(() => images, [images]);
   const videoPreviews = useMemo(() => videos, [videos]);
@@ -82,7 +114,139 @@ export default function Home() {
     }
   };
 
-  const uploadFile = async (file: File, resourceType: "image" | "video") => {
+  const requestAgent = async (promptValue?: string) => {
+    const prompt = (promptValue ?? agentPrompt).trim();
+    if (!prompt) {
+      setAgentError("先写下你想问的那一句。");
+      return;
+    }
+    if (agentFiles.some((item) => item.uploading)) {
+      setAgentError("文件还在上传中，稍等一下。");
+      return;
+    }
+    setAgentLoading(true);
+    setAgentError("");
+    setAgentMessages((prev) => [...prev, { role: "user", content: prompt }]);
+    try {
+      const response = await fetch("/api/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt,
+          sessionId: agentSessionId ?? undefined,
+          fileList: agentFiles.map((item) => item.url).filter(Boolean),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || "Agent request failed.");
+      }
+      const answer = data?.text || "（没有拿到明确回复）";
+      setAgentMessages((prev) => [...prev, { role: "assistant", content: answer }]);
+      if (data?.sessionId) {
+        setAgentSessionId(data.sessionId);
+      }
+      setAgentFiles([]);
+    } catch (error) {
+      setAgentError(
+        error instanceof Error ? error.message : "这次没有连上智能体。"
+      );
+    } finally {
+      setAgentLoading(false);
+    }
+  };
+
+  const handleSendAgent = () => {
+    const currentPrompt = agentPrompt;
+    setAgentPrompt("");
+    requestAgent(currentPrompt);
+  };
+
+  const getMediaUrl = (url: string) => {
+    if (!url) return url;
+    if (mediaFallback[url]) {
+      return `/api/media?url=${encodeURIComponent(url)}`;
+    }
+    return url;
+  };
+
+  const getRecentRecords = (items: RecordItem[]) => {
+    const windowDays = 30;
+    const now = Date.now();
+    const cutoff = now - windowDays * 24 * 60 * 60 * 1000;
+    return items.filter((item) => item.createdAt >= cutoff);
+  };
+
+  const requestInsight = async (options?: { force?: boolean; recentCount?: number }) => {
+    if (insightLoading) return;
+    const recentCount =
+      typeof options?.recentCount === "number"
+        ? options.recentCount
+        : getRecentRecords(records).length;
+    if (!options?.force) {
+      const stored = window.localStorage.getItem("insightLastCount");
+      const lastCount = stored ? Number(stored) : 0;
+      if (recentCount - lastCount < 7) return;
+    }
+
+    setInsightLoading(true);
+    setInsightError("");
+    try {
+      const response = await fetch("/api/insight", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || "Insight request failed.");
+      }
+      const summary = data?.summary
+        ? data.summary.trim()
+        : "当下还在慢慢铺开，不必急着下结论。";
+      const normalized = summary.startsWith("轻量自我观察提示：")
+        ? summary
+        : `轻量自我观察提示：${summary}`;
+      setInsightText(normalized);
+      const relatedIds: string[] = Array.isArray(data?.relatedIds)
+        ? data.relatedIds
+        : [];
+      const sourceRecords: RecordItem[] = Array.isArray(data?.records)
+        ? data.records.map((item: any) => ({
+            id: item.id,
+            createdAt: new Date(item.created_at || item.createdAt).getTime(),
+            content: formatContent(item.content || ""),
+            mood: item.mood || "",
+            images: [],
+            videos: [],
+          }))
+        : [];
+      const relatedMap = new Map(sourceRecords.map((item) => [item.id, item]));
+      const relatedList = relatedIds
+        .map((id) => relatedMap.get(id))
+        .filter((item): item is RecordItem => Boolean(item));
+      if (relatedList.length > 0) {
+        setInsightRelated(relatedList);
+      } else {
+        setInsightRelated(sourceRecords.slice(0, 3));
+      }
+      if (data?.fallback && data?.error) {
+        setInsightError(`智能体暂时不可用：${data.error}`);
+      }
+      window.localStorage.setItem("insightLastCount", String(recentCount));
+    } catch (error) {
+      setInsightError(
+        error instanceof Error ? error.message : "这次没有生成新的提示。"
+      );
+    } finally {
+      setInsightLoading(false);
+    }
+  };
+
+  const handleInsightClick = () => {
+    setShowInsightModal(true);
+  };
+
+  const uploadFile = async (
+    file: File,
+    resourceType: "image" | "video" | "raw"
+  ) => {
     const form = new FormData();
     form.append("file", file);
     form.append("resourceType", resourceType);
@@ -196,6 +360,9 @@ export default function Home() {
         videos: record.videos || [],
       };
       setRecords((prev) => [mapped, ...prev]);
+      const updatedRecords = [mapped, ...records];
+      const recentCount = getRecentRecords(updatedRecords).length;
+      requestInsight({ recentCount });
       setSearchResults((prev) =>
         searchActive ? [mapped, ...prev] : prev
       );
@@ -320,6 +487,55 @@ export default function Home() {
     return `${yyyy}/${mm}/${dd} ${hh}:${min} · 当下`;
   };
 
+  const softNoteText = useMemo(() => {
+    const windowDays = 30;
+    const now = Date.now();
+    const cutoff = now - windowDays * 24 * 60 * 60 * 1000;
+    const themes = [
+      "边界",
+      "被理解",
+      "失望",
+      "期待",
+      "关系",
+      "对齐",
+      "安全感",
+      "信任",
+      "孤独",
+      "放下",
+      "允许",
+      "疲惫",
+      "焦虑",
+      "平静",
+      "清醒",
+      "选择",
+      "诚实",
+      "自责",
+      "内疚",
+      "成长",
+    ];
+    const counts = new Map<string, number>();
+    const recentRecords = records.filter((item) => item.createdAt >= cutoff);
+    const lastTen = [...records]
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, 10);
+    const lastTenIds = new Set(lastTen.map((item) => item.id));
+    const intersection = recentRecords.filter((item) => lastTenIds.has(item.id));
+    intersection.forEach((item) => {
+      const textBlock = `${item.content || ""} ${item.mood || ""}`;
+      themes.forEach((theme) => {
+        if (textBlock.includes(theme)) {
+          counts.set(theme, (counts.get(theme) || 0) + 1);
+        }
+      });
+    });
+    if (counts.size === 0) {
+      return "轻量自我观察提示：当下还在慢慢铺开，不必急着下结论。";
+    }
+    const sorted = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+    const topThemes = sorted.slice(0, 2).map(([theme]) => `“${theme}”`);
+    return `轻量自我观察提示：你最近更常写下${topThemes.join("与")}。`;
+  }, [records]);
+
   const loadRecords = async () => {
     try {
       const response = await fetch("/api/records");
@@ -368,9 +584,9 @@ export default function Home() {
       if (!response.ok) throw new Error("Failed");
       const data = await response.json();
       setTimeStats({
-        last7: data.last7 ?? 0,
+        last3: data.last3 ?? 0,
+        last10: data.last10 ?? 0,
         last30: data.last30 ?? 0,
-        last90: data.last90 ?? 0,
       });
     } catch {
       // ignore stats errors
@@ -400,7 +616,37 @@ export default function Home() {
     setMoodHistory(moodDefaults);
   }, []);
 
+  useEffect(() => {
+    if (!agentChatRef.current) return;
+    agentChatRef.current.scrollTo({
+      top: agentChatRef.current.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [agentMessages.length, agentLoading]);
+
+  useEffect(() => {
+    if (searchActive) {
+      setCurrentPage(1);
+      return;
+    }
+    const totalPages = Math.max(1, Math.ceil(records.length / pageSize));
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [records.length, searchActive, currentPage]);
+
+  useEffect(() => {
+    if (records.length === 0) return;
+    if (insightAutoRanRef.current) return;
+    insightAutoRanRef.current = true;
+    requestInsight({ force: true });
+  }, [records.length]);
+
   const displayRecords = searchActive ? searchResults : records;
+  const totalPages = Math.max(1, Math.ceil(displayRecords.length / pageSize));
+  const pagedRecords = searchActive
+    ? displayRecords
+    : displayRecords.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
     <div className="page">
@@ -411,6 +657,18 @@ export default function Home() {
             <h1>私密记录空间 · MVP</h1>
             <p>先接住当下，再在未来轻轻回放。</p>
           </div>
+        </div>
+        <div className="header-actions">
+          <button
+            className="ai-entry"
+            type="button"
+            onClick={() => setShowAgent(true)}
+          >
+            <span className="ai-entry-icon" aria-hidden="true">
+              ✦
+            </span>
+            <span>和 AI 聊聊</span>
+          </button>
         </div>
       </header>
 
@@ -716,7 +974,7 @@ export default function Home() {
               {displayRecords.length === 0 && !searchActive ? (
                 <div className="empty-state">空空如也～</div>
               ) : null}
-              {displayRecords.map((record) => (
+              {pagedRecords.map((record) => (
                 <div key={record.id} className="card">
                   <div className="meta">
                     <span>{formatTime(record.createdAt)}</span>
@@ -738,7 +996,13 @@ export default function Home() {
                             })
                           }
                         >
-                          <img src={url} alt="图片" />
+                          <img
+                            src={getMediaUrl(url)}
+                            alt="图片"
+                            onError={() =>
+                              setMediaFallback((prev) => ({ ...prev, [url]: true }))
+                            }
+                          />
                         </button>
                       ))}
                       {record.videos?.map((url, idx) => (
@@ -753,7 +1017,12 @@ export default function Home() {
                             })
                           }
                         >
-                          <video src={url} />
+                          <video
+                            src={getMediaUrl(url)}
+                            onError={() =>
+                              setMediaFallback((prev) => ({ ...prev, [url]: true }))
+                            }
+                          />
                         </button>
                       ))}
                     </div>
@@ -784,6 +1053,31 @@ export default function Home() {
                 </div>
               ))}
             </div>
+            {!searchActive && displayRecords.length > pageSize ? (
+              <div className="pager">
+                <button
+                  className="ghost-btn"
+                  type="button"
+                  onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                  disabled={currentPage <= 1}
+                >
+                  上一页
+                </button>
+                <span className="pager-info">
+                  第 {currentPage} / {totalPages} 页
+                </span>
+                <button
+                  className="ghost-btn"
+                  type="button"
+                  onClick={() =>
+                    setCurrentPage((prev) => Math.min(totalPages, prev + 1))
+                  }
+                  disabled={currentPage >= totalPages}
+                >
+                  下一页
+                </button>
+              </div>
+            ) : null}
             {searchActive && displayRecords.length === 0 ? (
               <div className="hint">没有找到对应的时刻。</div>
             ) : null}
@@ -837,11 +1131,21 @@ export default function Home() {
               <button
                 className="timeline-btn"
                 type="button"
-                onClick={() => applyTimeRange(7, "最近 7 天")}
+                onClick={() => applyTimeRange(3, "最近 3 天")}
               >
-                最近 7 天
+                最近 3 天
               </button>
-              <span>{timeStats.last7} 条</span>
+              <span>{timeStats.last3} 条</span>
+            </div>
+            <div className="timeline-row">
+              <button
+                className="timeline-btn"
+                type="button"
+                onClick={() => applyTimeRange(10, "最近 10 天")}
+              >
+                最近 10 天
+              </button>
+              <span>{timeStats.last10} 条</span>
             </div>
             <div className="timeline-row">
               <button
@@ -853,21 +1157,16 @@ export default function Home() {
               </button>
               <span>{timeStats.last30} 条</span>
             </div>
-            <div className="timeline-row">
-              <button
-                className="timeline-btn"
-                type="button"
-                onClick={() => applyTimeRange(90, "最近 90 天")}
-              >
-                最近 90 天
-              </button>
-              <span>{timeStats.last90} 条</span>
-            </div>
           </div>
 
-          <div className="soft-note" style={{ marginTop: 18 }}>
-            轻量自我观察提示：你最近更常写下“边界”与“被理解”。
-          </div>
+          <button
+            className="soft-note"
+            style={{ marginTop: 18 }}
+            type="button"
+            onClick={handleInsightClick}
+          >
+            {insightLoading ? "轻量自我观察提示：正在生成…" : insightText}
+          </button>
 
           <div className="search" style={{ marginTop: 18 }}>
             <h2>基础检索</h2>
@@ -967,9 +1266,27 @@ export default function Home() {
         >
           <div className="preview-card" onClick={(event) => event.stopPropagation()}>
             {previewItem.type === "image" ? (
-              <img src={previewItem.url} alt="预览" />
+              <img
+                src={getMediaUrl(previewItem.url)}
+                alt="预览"
+                onError={() =>
+                  setMediaFallback((prev) => ({
+                    ...prev,
+                    [previewItem.url]: true,
+                  }))
+                }
+              />
             ) : (
-              <video src={previewItem.url} controls />
+              <video
+                src={getMediaUrl(previewItem.url)}
+                controls
+                onError={() =>
+                  setMediaFallback((prev) => ({
+                    ...prev,
+                    [previewItem.url]: true,
+                  }))
+                }
+              />
             )}
             <button
               className="preview-close"
@@ -978,6 +1295,199 @@ export default function Home() {
             >
               关闭
             </button>
+          </div>
+        </div>
+      ) : null}
+      {showAgent ? (
+        <div className="dialog-overlay" role="dialog" aria-modal="true">
+          <div className="ai-card ai-card--chat">
+            <div className="ai-header">
+              <div className="ai-title">
+                <h3>和 AI 聊聊</h3>
+                <p>一问一答，慢慢聊。</p>
+              </div>
+              <button
+                className="text-btn"
+                type="button"
+                onClick={() => {
+                  setShowAgent(false);
+                  setAgentError("");
+                }}
+              >
+                关闭
+              </button>
+            </div>
+
+            <div className="ai-chat" ref={agentChatRef}>
+              {agentMessages.length === 0 ? (
+                <div className="ai-empty">现在还没有对话记录。</div>
+              ) : null}
+              {agentMessages.map((item, index) => (
+                <div
+                  key={`${item.role}-${index}`}
+                  className={`ai-row ai-row--${item.role}`}
+                >
+                  {item.role === "assistant" ? (
+                    <span className="ai-avatar" aria-hidden="true">
+                      AI
+                    </span>
+                  ) : null}
+                  <div className={`ai-bubble ai-bubble--${item.role}`}>
+                    {item.content}
+                  </div>
+                </div>
+              ))}
+              {agentLoading ? (
+                <div className="ai-row ai-row--assistant">
+                  <span className="ai-avatar" aria-hidden="true">
+                    AI
+                  </span>
+                  <div className="ai-bubble ai-bubble--assistant ai-bubble--thinking">
+                    正在思考…
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            {agentError ? <div className="ai-error">{agentError}</div> : null}
+
+            {agentFiles.length > 0 ? (
+              <div className="ai-files">
+                {agentFiles.map((file) => (
+                  <button
+                    key={file.id}
+                    type="button"
+                    className="ai-file"
+                    onClick={() =>
+                      setAgentFiles((prev) =>
+                        prev.filter((item) => item.id !== file.id)
+                      )
+                    }
+                  >
+                    {file.name}
+                    {file.uploading ? "（上传中）" : " ×"}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            <textarea
+              className="ai-textarea"
+              placeholder="例如：请帮我介绍一下这个产品"
+              value={agentPrompt}
+              onChange={(event) => setAgentPrompt(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  handleSendAgent();
+                  return;
+                }
+                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                  handleSendAgent();
+                }
+              }}
+            />
+
+            <div className="ai-actions">
+              <button
+                className="ghost-btn"
+                type="button"
+                onClick={() => agentFileInputRef.current?.click()}
+              >
+                上传文件
+              </button>
+              <button
+                className="primary-btn"
+                type="button"
+                onClick={handleSendAgent}
+                disabled={agentLoading || agentFiles.some((item) => item.uploading)}
+              >
+                发送
+              </button>
+            </div>
+            <input
+              ref={agentFileInputRef}
+              type="file"
+              multiple
+              onChange={(event) => {
+                const files = event.target.files
+                  ? Array.from(event.target.files)
+                  : [];
+                if (files.length > 0) {
+                  files.forEach(async (file) => {
+                    const id = `agent-${Date.now()}-${Math.random()
+                      .toString(16)
+                      .slice(2)}`;
+                    setAgentFiles((prev) => [
+                      ...prev,
+                      { id, name: file.name, url: "", uploading: true },
+                    ]);
+                    try {
+                      const url = await uploadFile(file, "raw");
+                      setAgentFiles((prev) =>
+                        prev.map((item) =>
+                          item.id === id ? { ...item, url, uploading: false } : item
+                        )
+                      );
+                    } catch {
+                      setAgentFiles((prev) => prev.filter((item) => item.id !== id));
+                      setAgentError("文件上传失败了。");
+                    }
+                  });
+                }
+                if (agentFileInputRef.current) {
+                  agentFileInputRef.current.value = "";
+                }
+              }}
+              hidden
+            />
+          </div>
+        </div>
+      ) : null}
+      {showInsightModal ? (
+        <div className="dialog-overlay" role="dialog" aria-modal="true">
+          <div className="insight-card">
+            <div className="insight-header">
+              <div>
+                <h3>轻量自我观察</h3>
+                <p>基于最近的记录生成。</p>
+              </div>
+              <button
+                className="text-btn"
+                type="button"
+                onClick={() => setShowInsightModal(false)}
+              >
+                关闭
+              </button>
+            </div>
+            <div className="insight-summary">
+              {insightLoading ? "正在生成…" : insightText}
+            </div>
+            {insightError ? <div className="ai-error">{insightError}</div> : null}
+            <div className="insight-list">
+              {insightRelated.length === 0 ? (
+                <div className="insight-empty">暂时没有强相关记录。</div>
+              ) : null}
+              {insightRelated.map((item) => (
+                <div key={item.id} className="insight-item">
+                  <div className="meta">
+                    <span>{formatTime(item.createdAt)}</span>
+                    <span className="tag">{item.mood || "当下"}</span>
+                  </div>
+                  <div className="content">{formatContent(item.content)}</div>
+                </div>
+              ))}
+            </div>
+            <div className="insight-actions">
+              <button
+                className="ghost-btn"
+                type="button"
+                onClick={() => requestInsight({ force: true })}
+                disabled={insightLoading}
+              >
+                重新生成
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
