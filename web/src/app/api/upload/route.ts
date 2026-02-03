@@ -21,8 +21,9 @@ cloudinary.config({
 export async function POST(request: Request) {
   const form = await request.formData();
   const file = form.get("file");
-  const resourceType =
-    (form.get("resourceType") as "image" | "video" | null) ?? "image";
+  const resourceType = (form.get("resourceType") as string | null) ?? "image";
+  const allowedTypes = new Set(["image", "video", "raw"]);
+  const safeResourceType = allowedTypes.has(resourceType) ? resourceType : "image";
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "Missing file" }, { status: 400 });
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
     const stream = cloudinary.uploader.upload_stream(
       {
         folder: "bushi_myheart",
-        resource_type: resourceType,
+        resource_type: safeResourceType,
       },
       (error, result) => {
         if (error || !result) {

@@ -24,17 +24,17 @@ export async function GET(request: Request) {
     const rows = (await sql`
       SELECT range, count
       FROM (
-        SELECT '7d' as range, COUNT(*)::int as count
+        SELECT '3d' as range, COUNT(*)::int as count
         FROM records
-        WHERE created_at >= (now() - interval '7 days')
+        WHERE created_at >= (now() - interval '3 days')
+        UNION ALL
+        SELECT '10d' as range, COUNT(*)::int as count
+        FROM records
+        WHERE created_at >= (now() - interval '10 days')
         UNION ALL
         SELECT '30d' as range, COUNT(*)::int as count
         FROM records
         WHERE created_at >= (now() - interval '30 days')
-        UNION ALL
-        SELECT '90d' as range, COUNT(*)::int as count
-        FROM records
-        WHERE created_at >= (now() - interval '90 days')
       ) t;
     `) as unknown as StatsRow[];
     const map = rows.reduce<Record<string, number>>((acc, row) => {
@@ -42,9 +42,9 @@ export async function GET(request: Request) {
       return acc;
     }, {});
     return NextResponse.json({
-      last7: map["7d"] ?? 0,
+      last3: map["3d"] ?? 0,
+      last10: map["10d"] ?? 0,
       last30: map["30d"] ?? 0,
-      last90: map["90d"] ?? 0,
     });
   }
 
