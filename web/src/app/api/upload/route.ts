@@ -21,9 +21,14 @@ cloudinary.config({
 export async function POST(request: Request) {
   const form = await request.formData();
   const file = form.get("file");
+  const allowedTypes = ["image", "video", "raw"] as const;
+  type ResourceType = (typeof allowedTypes)[number];
   const resourceType = (form.get("resourceType") as string | null) ?? "image";
-  const allowedTypes = new Set(["image", "video", "raw"]);
-  const safeResourceType = allowedTypes.has(resourceType) ? resourceType : "image";
+  const safeResourceType: ResourceType = allowedTypes.includes(
+    resourceType as ResourceType
+  )
+    ? (resourceType as ResourceType)
+    : "image";
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "Missing file" }, { status: 400 });
